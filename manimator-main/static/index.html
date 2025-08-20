@@ -1,0 +1,138 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Manimator Web</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <link rel="stylesheet" href="https://unpkg.com/reactflow@11/dist/style.css" />
+  <script src="https://unpkg.com/reactflow@11/dist/reactflow.production.min.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+</head>
+<body class="h-screen">
+  <div id="root" class="h-full"></div>
+
+  <script type="text/babel">
+    const { useState } = React;
+    const {
+      ReactFlow: Flow,
+      MiniMap,
+      Controls,
+      Background,
+      addEdge,
+      useNodesState,
+      useEdgesState
+    } = window.ReactFlow;
+
+    function App() {
+      const initialNodes = [
+        { id: '1', position: { x: 0, y: 0 }, data: { label: 'OCR', text: '' } },
+        { id: '2', position: { x: 200, y: 0 }, data: { label: 'Storyboard', text: '' } },
+        { id: '3', position: { x: 400, y: 0 }, data: { label: 'Manim Code', text: '' } },
+        { id: 'output', position: { x: 200, y: 200 }, data: { label: 'Video Output' } }
+      ];
+
+      const initialEdges = [
+        { id: 'e1', source: '1', target: 'output' },
+        { id: 'e2', source: '2', target: 'output' },
+        { id: 'e3', source: '3', target: 'output' }
+      ];
+
+      const [nodes, setNodes, onNodesChange] = useNodesState(initialNodes);
+      const [edges, setEdges, onEdgesChange] = useEdgesState(initialEdges);
+      const [selected, setSelected] = useState(null);
+      const [videoUrl, setVideoUrl] = useState(null);
+      const [loading, setLoading] = useState(false);
+
+      const onConnect = (params) => setEdges((eds) => addEdge(params, eds));
+      const onNodeClick = (evt, node) => setSelected(node);
+
+      const updateNodeText = (id, text) => {
+        setNodes((ns) => ns.map((n) => n.id === id ? { ...n, data: { ...n.data, text } } : n));
+      };
+
+      const renderManim = async () => {
+        if (!selected) return;
+        setLoading(true);
+        try {
+          const res = await fetch('/api/generate-animation', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ prompt: selected.data.text || '' })
+          });
+          if (!res.ok) throw new Error('HTTP ' + res.status);
+          const data = await res.json();
+          setVideoUrl(data.video_url);
+        } catch (e) {
+          alert(e);
+        } finally {
+          setLoading(false);
+        }
+      };
+
+      return (
+        <div className="h-full relative">
+          <Flow
+            nodes={nodes}
+            edges={edges}
+            onNodesChange={onNodesChange}
+            onEdgesChange={onEdgesChange}
+            onConnect={onConnect}
+            onNodeClick={onNodeClick}
+            fitView
+            className="h-full"
+          >
+            <Background />
+            <Controls />
+            <MiniMap />
+          </Flow>
+
+          {videoUrl && (
+            <div className="absolute bottom-4 left-4 right-4 bg-white p-2 shadow rounded">
+              <video controls className="w-full">
+                <source src={videoUrl} type="video/mp4" />
+              </video>
+            </div>
+          )}
+
+          {selected && (
+            <div className="absolute top-0 right-0 w-64 h-full bg-white border-l p-4 overflow-auto">
+              <h2 className="font-bold mb-2">{selected.data.label}</h2>
+              {selected.id !== 'output' ? (
+                <>
+                  <textarea
+                    className="w-full h-48 border p-2"
+                    value={selected.data.text || ''}
+                    onChange={(e) => updateNodeText(selected.id, e.target.value)}
+                  />
+                  {selected.id === '3' && (
+                    <button
+                      onClick={renderManim}
+                      disabled={loading}
+                      className="mt-2 w-full bg-indigo-600 text-white py-1 rounded"
+                    >
+                      {loading ? '렌더링...' : '렌더링'}
+                    </button>
+                  )}
+                </>
+              ) : (
+                videoUrl ? (
+                  <video controls className="w-full">
+                    <source src={videoUrl} type="video/mp4" />
+                  </video>
+                ) : (
+                  <p>렌더된 영상이 없습니다.</p>
+                )
+              )}
+            </div>
+          )}
+        </div>
+      );
+    }
+
+    ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+  </script>
+</body>
+</html>
